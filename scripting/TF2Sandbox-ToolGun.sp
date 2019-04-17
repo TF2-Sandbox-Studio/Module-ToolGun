@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.1"
+#define PLUGIN_VERSION "1.2"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -95,6 +95,22 @@ public void OnClientPutInServer(int client)
 	g_iClientVMRef[client] = INVALID_ENT_REFERENCE;
 	g_iAimPointRef[client] = EntIndexToEntRef(CreateAimPoint());
 	g_iCopyEntityRef[client] = INVALID_ENT_REFERENCE;
+}
+
+public void OnEntityCreated(int entity, const char[] classname)
+{
+	if (StrEqual(classname, "tf_dropped_weapon"))
+	{
+		SDKHook(entity, SDKHook_SpawnPost, BlockToolGunDrop);
+	}
+}
+
+public void BlockToolGunDrop(int entity)
+{
+	if(IsValidEntity(entity) && IsToolGun(entity))
+	{
+		AcceptEntityInput(entity, "Kill");
+	}
 }
 
 public Action Command_EquipToolGun(int client, int args)
