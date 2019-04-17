@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.0"
+#define PLUGIN_VERSION "1.1"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -681,6 +681,14 @@ int GetClientAimEntity(int client)
 		int entity = TR_GetEntityIndex(trace);
 		if (entity > 0 && Build_ReturnEntityOwner(entity) == client)
 		{
+			char szClass[32];
+			GetEntityClassname(entity, szClass, sizeof(szClass));
+			
+			if (StrContains(szClass, "prop_") == -1)
+			{
+				return -1;
+			}
+			
 			CloseHandle(trace);
 			return entity;
 		}
