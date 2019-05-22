@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.2"
+#define PLUGIN_VERSION "1.3"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -79,9 +79,9 @@ public void OnMapStart()
 	PrecacheSound("weapons/airboat/airboat_gun_lastshot2.wav");
 	PrecacheSound(SONND_TOOLGUN_SELECT);
 	
-	for (int client = 1; client < MAXPLAYERS; client++)
+	for (int client = 1; client <= MaxClients; client++)
 	{
-		if(client > 0 && client <= MaxClients && IsClientInGame(client))
+		if(IsClientInGame(client))
 		{
 			OnClientPutInServer(client);
 		}
@@ -201,6 +201,23 @@ public Action WeaponSwitchHookPost(int client, int entity)
 
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
+	int iViewModel = GetEntPropEnt(client, Prop_Send, "m_hViewModel");
+	if(IsHoldingToolGun(client) && EntRefToEntIndex(g_iClientVMRef[client]) == INVALID_ENT_REFERENCE)
+	{
+		//Hide Original viewmodel
+		int iEffects = GetEntProp(iViewModel, Prop_Send, "m_fEffects");
+		iEffects |= EF_NODRAW;
+		SetEntProp(iViewModel, Prop_Send, "m_fEffects", iEffects);
+		 
+		//Create client physics gun viewmodel
+		g_iClientVMRef[client] = EntIndexToEntRef(CreateVM(client, g_iToolGunVM));
+	}
+	//Remove client physics gun viewmodel
+	else if (!IsHoldingToolGun(client) && EntRefToEntIndex(g_iClientVMRef[client]) != INVALID_ENT_REFERENCE)
+	{
+		AcceptEntityInput(EntRefToEntIndex(g_iClientVMRef[client]), "Kill");
+	}
+	
 	if (IsHoldingToolGun(client) && ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2)) && g_fToolsCD[client] <= 0.0)
 	{
 		g_fToolsCD[client] = 2.0;
@@ -281,8 +298,11 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (buttons & IN_ATTACK)
 				{
-					g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
-					PrintCenterText(client, "Copied! Index: %i", entity);
+					if (IsValidEntity(entity))
+					{
+						g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
+						PrintCenterText(client, "Copied! Index: %i", entity);
+					}
 				}
 				else if (buttons & IN_ATTACK2)
 				{
