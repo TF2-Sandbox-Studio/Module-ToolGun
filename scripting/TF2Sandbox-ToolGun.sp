@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.3"
+#define PLUGIN_VERSION "1.4"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -22,7 +22,7 @@ public Plugin myinfo =
 	url = "https://github.com/tf2-sandbox-studio/Module-ToolGun"
 };
 
-//Physics Gun Settings
+//Tool Gun Settings
 #define WEAPON_SLOT 1
 
 #define MODEL_TOOLLASER	"materials/sprites/physbeam.vmt"
@@ -43,7 +43,7 @@ int g_iToolGunVM;
 int g_iToolGunWM;
 
 int g_iAimPointRef[MAXPLAYERS + 1]; //Entity aimming point
-int g_iClientVMRef[MAXPLAYERS + 1]; //Client physics gun viewmodel ref
+int g_iClientVMRef[MAXPLAYERS + 1]; //Client Tool gun viewmodel ref
 int g_iTools[MAXPLAYERS + 1];
 float g_fToolsCD[MAXPLAYERS + 1];
 bool g_bIN_RELOAD[MAXPLAYERS + 1];
@@ -187,10 +187,10 @@ public Action WeaponSwitchHookPost(int client, int entity)
 		iEffects |= EF_NODRAW;
 		SetEntProp(iViewModel, Prop_Send, "m_fEffects", iEffects);
 		 
-		//Create client physics gun viewmodel
+		//Create client toolgun viewmodel
 		g_iClientVMRef[client] = EntIndexToEntRef(CreateVM(client, g_iToolGunVM));
 	}
-	//Remove client physics gun viewmodel
+	//Remove client toolgun viewmodel
 	else if (EntRefToEntIndex(g_iClientVMRef[client]) != INVALID_ENT_REFERENCE)
 	{
 		AcceptEntityInput(EntRefToEntIndex(g_iClientVMRef[client]), "Kill");
@@ -209,10 +209,10 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		iEffects |= EF_NODRAW;
 		SetEntProp(iViewModel, Prop_Send, "m_fEffects", iEffects);
 		 
-		//Create client physics gun viewmodel
+		//Create client toolgun viewmodel
 		g_iClientVMRef[client] = EntIndexToEntRef(CreateVM(client, g_iToolGunVM));
 	}
-	//Remove client physics gun viewmodel
+	//Remove client toolgun viewmodel
 	else if (!IsHoldingToolGun(client) && EntRefToEntIndex(g_iClientVMRef[client]) != INVALID_ENT_REFERENCE)
 	{
 		AcceptEntityInput(EntRefToEntIndex(g_iClientVMRef[client]), "Kill");
@@ -256,6 +256,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 				{
 					AcceptEntityInput(entity, "Kill");
 					PrintCenterText(client, "Removed (%i)", entity);
+					
+					Build_SetLimit(client, -1);
 				}
 			}
 			//Resizer
