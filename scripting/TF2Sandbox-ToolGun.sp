@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.4"
+#define PLUGIN_VERSION "1.5"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -59,6 +59,27 @@ int g_iEntityColor[MAXPLAYERS + 1];
 //RenderFx
 int g_iEntityRenderFx[MAXPLAYERS + 1];
 
+//Effects
+int g_iEntityEffect[MAXPLAYERS + 1];
+#define PARTICLE_LIST 15
+static char g_strParticle[PARTICLE_LIST][] =
+{
+	"burningplayer_red",
+	"burningplayer_blue",
+	"burningplayer_rainbow",
+	"burningplayer_rainbow_blue",
+	"burningplayer_rainbow_red",
+	"burningplayer_rainbow_flame",
+	"burningplayer_rainbow_glow_old",
+	"burningplayer_rainbow_OLD",
+	"burningplayer_rainbow_glow_white",
+	"community_sparkle",
+	"ghost_pumpkin",
+	"ghost_pumpkin_flyingbits",
+	"ghost_pumpkin_blueglow",
+	"hwn_skeleton_glow_blue",
+	"hwn_skeleton_glow_red"
+};
 
 public void OnPluginStart()
 {
@@ -218,32 +239,13 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		AcceptEntityInput(EntRefToEntIndex(g_iClientVMRef[client]), "Kill");
 	}
 	
-	if (IsHoldingToolGun(client) && ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2)) && g_fToolsCD[client] <= 0.0)
+	if (IsHoldingToolGun(client) && ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2) || (buttons & IN_ATTACK3)) && g_fToolsCD[client] <= 0.0)
 	{
 		g_fToolsCD[client] = 2.0;
 		
-		EmitSoundToClient(client, SOUND_TOOLGUN_SHOOT, client, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, 100);
-		
-		TE_SetupBeamRingPoint(GetClientAimPosition(client), 5.0, 20.0, g_iModelIndex, g_iHaloIndex, 0, 10, 0.5, 3.0, 10.0, {255, 255, 255, 255}, 10, 0);
-		TE_SendToAll();
-		
-		int clientvm = EntRefToEntIndex(g_iClientVMRef[client]);
-		int iAimPoint = EntRefToEntIndex(g_iAimPointRef[client]);
-		if (clientvm != INVALID_ENT_REFERENCE && iAimPoint != INVALID_ENT_REFERENCE)
+		if (buttons & IN_ATTACK || buttons & IN_ATTACK2)
 		{
-			TeleportEntity(iAimPoint, GetClientAimPosition(client), NULL_VECTOR, NULL_VECTOR);
-			
-			TE_SetupBeamEnts(iAimPoint, EntRefToEntIndex(g_iClientVMRef[client]), g_iModelIndex, g_iHaloIndex, 0, 15, 0.1, 1.0, 1.0, 1, 0.0, {255, 255, 255, 255}, 10, 20);
-			TE_SendToClient(client);
-			
-			for (int i = 1; i <= MaxClients; i++)
-			{
-				if (client != i && IsClientInGame(i))
-				{
-					TE_SetupBeamEnts(client, iAimPoint, g_iModelIndex, g_iHaloIndex, 0, 15, 0.1, 1.0, 1.0, 1, 0.0, {255, 255, 255, 255}, 10, 20);
-					TE_SendToClient(i);
-				}
-			}
+			TE_SendLaser(client);
 		}
 		
 		int entity = GetClientAimEntity(client);
@@ -254,10 +256,13 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (IsValidEntity(entity))
 				{
-					AcceptEntityInput(entity, "Kill");
-					PrintCenterText(client, "Removed (%i)", entity);
-					
-					Build_SetLimit(client, -1);
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
+					{
+						AcceptEntityInput(entity, "Kill");
+						PrintCenterText(client, "Removed (%i)", entity);
+						
+						Build_SetLimit(client, -1);
+					}
 				}
 			}
 			//Resizer
@@ -265,17 +270,20 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (IsValidEntity(entity))
 				{
-					float fSize = GetEntPropFloat(entity, Prop_Send, "m_flModelScale");
-					if ((buttons & IN_ATTACK) && (fSize < 2.0))
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
 					{
-						fSize += 0.1;
+						float fSize = GetEntPropFloat(entity, Prop_Send, "m_flModelScale");
+						if ((buttons & IN_ATTACK) && (fSize < 2.0))
+						{
+							fSize += 0.1;
+						}
+						else if ((buttons & IN_ATTACK2) && (fSize > 0.1))
+						{
+							fSize -= 0.1;
+						}
+						SetEntPropFloat(entity, Prop_Send, "m_flModelScale", fSize);
+						PrintCenterText(client, "Size: %.1f", fSize);
 					}
-					else if ((buttons & IN_ATTACK2) && (fSize > 0.1))
-					{
-						fSize -= 0.1;
-					}
-					SetEntPropFloat(entity, Prop_Send, "m_flModelScale", fSize);
-					PrintCenterText(client, "Size: %.1f", fSize);
 				}
 			}
 			//Set Collision
@@ -326,30 +334,32 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 						}
 					}
 				}
-
 			}
 			//Set Alpha
 			case (4):
 			{
 				if (IsValidEntity(entity))
 				{
-					int iR, iG, iB, iA;
-					GetEntityRenderColor(entity, iR, iG, iB, iA);
-					
-					SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
-					
-					if (buttons & IN_ATTACK && iA > 55)
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
 					{
-						iA -= 10;
-						if (iA < 0)	iA = 55;
+						int iR, iG, iB, iA;
+						GetEntityRenderColor(entity, iR, iG, iB, iA);
+						
+						SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
+						
+						if (buttons & IN_ATTACK && iA > 55)
+						{
+							iA -= 10;
+							if (iA < 0)	iA = 55;
+						}
+						else if (buttons & IN_ATTACK2 && iA < 255)
+						{
+							iA += 10;
+							if (iA > 255)	iA = 255;
+						}
+						SetEntityRenderColor(entity, iR, iG, iB, iA);
+						PrintCenterText(client, "Alpha: %i", iA);
 					}
-					else if (buttons & IN_ATTACK2 && iA < 255)
-					{
-						iA += 10;
-						if (iA > 255)	iA = 255;
-					}
-					SetEntityRenderColor(entity, iR, iG, iB, iA);
-					PrintCenterText(client, "Alpha: %i", iA);
 				}
 			}
 			//Set Color
@@ -357,53 +367,56 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (IsValidEntity(entity))
 				{
-					int iR, iG, iB, iA;
-					GetEntityRenderColor(entity, iR, iG, iB, iA);
-					SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
-					
-					if (buttons & IN_ATTACK)
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
 					{
-						if (EntRefToEntIndex(g_iCopyEntityRef[client]) == INVALID_ENT_REFERENCE)
+						int iR, iG, iB, iA;
+						GetEntityRenderColor(entity, iR, iG, iB, iA);
+						SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
+						
+						if (buttons & IN_ATTACK)
 						{
+							if (EntRefToEntIndex(g_iCopyEntityRef[client]) == INVALID_ENT_REFERENCE)
+							{
+								g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
+							}
+							
+							if (entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
+							{
+								(g_iEntityColor[client] < 5)? (g_iEntityColor[client]++):(g_iEntityColor[client] = 0);
+							}
+							
+							char strColor[10];
+							switch (g_iEntityColor[client])
+							{
+								case (0): { iR = 128; iG = 0; iB = 128; strColor = "Purple"; }
+								case (1): { iR = 255; iG = 0; iB = 0; strColor = "Red"; }
+								case (2): { iR = 255; iG = 165; iB = 0; strColor = "Orange"; }
+								case (3): { iR = 255; iG = 255; iB = 0; strColor = "Yellow"; }
+								case (4): { iR = 0; iG = 255; iB = 0; strColor = "Green"; }
+								case (5): { iR = 0; iG = 0; iB = 255; strColor = "Blue"; }
+							}
+	
+							SetEntityRenderColor(entity, iR, iG, iB, iA);
+							PrintCenterText(client, "Color: %s", strColor);
+							
 							g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
 						}
-						
-						if (entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
+						else if (buttons & IN_ATTACK2)
 						{
-							(g_iEntityColor[client] < 5)? (g_iEntityColor[client]++):(g_iEntityColor[client] = 0);
+							iR = 255;
+							iG = 255;
+							iB = 255;
+							
+							SetEntityRenderMode(entity, RENDER_NORMAL);
+							SetEntityRenderColor(entity, iR, iG, iB, iA);
+							
+							if (iA < 255)
+							{
+								SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
+							}
+							
+							PrintCenterText(client, "Restored");
 						}
-						
-						char strColor[10];
-						switch (g_iEntityColor[client])
-						{
-							case (0): { iR = 128; iG = 0; iB = 128; strColor = "Purple"; }
-							case (1): { iR = 255; iG = 0; iB = 0; strColor = "Red"; }
-							case (2): { iR = 255; iG = 165; iB = 0; strColor = "Orange"; }
-							case (3): { iR = 255; iG = 255; iB = 0; strColor = "Yellow"; }
-							case (4): { iR = 0; iG = 255; iB = 0; strColor = "Green"; }
-							case (5): { iR = 0; iG = 0; iB = 255; strColor = "Blue"; }
-						}
-
-						SetEntityRenderColor(entity, iR, iG, iB, iA);
-						PrintCenterText(client, "Color: %s", strColor);
-						
-						g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
-					}
-					else if (buttons & IN_ATTACK2)
-					{
-						iR = 255;
-						iG = 255;
-						iB = 255;
-						
-						SetEntityRenderMode(entity, RENDER_NORMAL);
-						SetEntityRenderColor(entity, iR, iG, iB, iA);
-						
-						if (iA < 255)
-						{
-							SetEntityRenderMode(entity, RENDER_TRANSCOLOR);
-						}
-						
-						PrintCenterText(client, "Restored");
 					}
 				}
 			}
@@ -412,17 +425,21 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (IsValidEntity(entity))
 				{
-					int iSkin = GetEntProp(entity, Prop_Send, "m_nSkin");
-					if (buttons & IN_ATTACK)
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
 					{
-						iSkin += 1;
+						int iSkin = GetEntProp(entity, Prop_Send, "m_nSkin");
+						if (buttons & IN_ATTACK)
+						{
+							iSkin += 1;
+						}
+						else if (buttons & IN_ATTACK2 && iSkin > 1)
+						{
+							iSkin -= 1;
+						}
+						
+						SetEntProp(entity, Prop_Send, "m_nSkin", iSkin);
+						PrintCenterText(client, "Skin: %i", iSkin);
 					}
-					else if (buttons & IN_ATTACK2 && iSkin > 1)
-					{
-						iSkin -= 1;
-					}
-					SetEntProp(entity, Prop_Send, "m_nSkin", iSkin);
-					PrintCenterText(client, "Skin: %i", iSkin);
 				}
 			}
 			//Set Render Fx
@@ -430,65 +447,95 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				if (IsValidEntity(entity))
 				{
-					if (EntRefToEntIndex(g_iCopyEntityRef[client]) == INVALID_ENT_REFERENCE)
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
 					{
+						if (EntRefToEntIndex(g_iCopyEntityRef[client]) == INVALID_ENT_REFERENCE)
+						{
+							g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
+						}
+						
+						g_iEntityRenderFx[client] = view_as<int>(GetEntityRenderFx(entity));
+						
+						if (buttons & IN_ATTACK && entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
+						{
+							if (g_iEntityRenderFx[client] < 16)
+							{
+								g_iEntityRenderFx[client]++;
+							}
+							else
+							{
+								g_iEntityRenderFx[client] = 0;
+							}
+						}
+						else if (buttons & IN_ATTACK2 && entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
+						{
+							if (g_iEntityRenderFx[client] > 0)
+							{
+								g_iEntityRenderFx[client]--;
+							}
+							else
+							{
+								g_iEntityRenderFx[client] = 16;
+							}
+						}
+						
+						char strRenderFx[40];
+						switch (g_iEntityRenderFx[client])
+						{
+							case (0): { strRenderFx = "RENDERFX_NONE"; }
+							case (1): { strRenderFx = "RENDERFX_PULSE_SLOW"; }
+							case (2): { strRenderFx = "RENDERFX_PULSE_FAST"; }
+							case (3): { strRenderFx = "RENDERFX_PULSE_SLOW_WIDE"; }
+							case (4): { strRenderFx = "RENDERFX_PULSE_FAST_WIDE"; }
+							case (5): { strRenderFx = "RENDERFX_FADE_SLOW"; }
+							case (6): { strRenderFx = "RENDERFX_FADE_FAST"; }
+							case (7): { strRenderFx = "RENDERFX_SOLID_SLOW"; }
+							case (8): { strRenderFx = "RENDERFX_SOLID_FAST"; }
+							case (9): { strRenderFx = "RENDERFX_STROBE_SLOW"; }
+							case (10): { strRenderFx = "RENDERFX_STROBE_FAST"; }
+							case (11): { strRenderFx = "RENDERFX_STROBE_FASTER"; }
+							case (12): { strRenderFx = "RENDERFX_FLICKER_SLOW"; }
+							case (13): { strRenderFx = "RENDERFX_FLICKER_FAST"; }
+							case (14): { strRenderFx = "RENDERFX_NO_DISSIPATION"; }
+							case (15): { strRenderFx = "RENDERFX_DISTORT"; }
+							case (16): { strRenderFx = "RENDERFX_HOLOGRAM"; }
+						}
+						
+						SetEntityRenderFx(entity, view_as<RenderFx>(g_iEntityRenderFx[client]));
+						PrintCenterText(client, "RenderFx: %s (%i)", strRenderFx, g_iEntityRenderFx[client]);
+						
 						g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
 					}
-					
-					g_iEntityRenderFx[client] = view_as<int>(GetEntityRenderFx(entity));
-					
-					if (buttons & IN_ATTACK && entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
-					{
-						if (g_iEntityRenderFx[client] < 16)
-						{
-							g_iEntityRenderFx[client]++;
-						}
-						else
-						{
-							g_iEntityRenderFx[client] = 0;
-						}
-					}
-					else if (buttons & IN_ATTACK2 && entity == EntRefToEntIndex(g_iCopyEntityRef[client]))
-					{
-						if (g_iEntityRenderFx[client] > 0)
-						{
-							g_iEntityRenderFx[client]--;
-						}
-						else
-						{
-							g_iEntityRenderFx[client] = 16;
-						}
-					}
-					
-					char strRenderFx[40];
-					switch (g_iEntityRenderFx[client])
-					{
-						case (0): { strRenderFx = "RENDERFX_NONE"; }
-						case (1): { strRenderFx = "RENDERFX_PULSE_SLOW"; }
-						case (2): { strRenderFx = "RENDERFX_PULSE_FAST"; }
-						case (3): { strRenderFx = "RENDERFX_PULSE_SLOW_WIDE"; }
-						case (4): { strRenderFx = "RENDERFX_PULSE_FAST_WIDE"; }
-						case (5): { strRenderFx = "RENDERFX_FADE_SLOW"; }
-						case (6): { strRenderFx = "RENDERFX_FADE_FAST"; }
-						case (7): { strRenderFx = "RENDERFX_SOLID_SLOW"; }
-						case (8): { strRenderFx = "RENDERFX_SOLID_FAST"; }
-						case (9): { strRenderFx = "RENDERFX_STROBE_SLOW"; }
-						case (10): { strRenderFx = "RENDERFX_STROBE_FAST"; }
-						case (11): { strRenderFx = "RENDERFX_STROBE_FASTER"; }
-						case (12): { strRenderFx = "RENDERFX_FLICKER_SLOW"; }
-						case (13): { strRenderFx = "RENDERFX_FLICKER_FAST"; }
-						case (14): { strRenderFx = "RENDERFX_NO_DISSIPATION"; }
-						case (15): { strRenderFx = "RENDERFX_DISTORT"; }
-						case (16): { strRenderFx = "RENDERFX_HOLOGRAM"; }
-					}
-					
-					SetEntityRenderFx(entity, view_as<RenderFx>(g_iEntityRenderFx[client]));
-					PrintCenterText(client, "RenderFx: %s (%i)", strRenderFx, g_iEntityRenderFx[client]);
-					
-					g_iCopyEntityRef[client] = EntIndexToEntRef(entity);
 				}
 			}
-			
+			//Set Effect
+			case (8):
+			{
+				if (IsValidEntity(entity))
+				{
+					if (buttons & IN_ATTACK)
+					{
+						TE_ParticleToAll(g_strParticle[g_iEntityEffect[client]], _, _, _, entity, -1, -1, true);
+						PrintCenterText(client, "Apply : %s", g_strParticle[g_iEntityEffect[client]]);
+					}
+					
+					if (buttons & IN_ATTACK2)
+					{
+						TE_ParticleToAll("ping_circle", _, _, _, entity, -1, -1, true);
+						PrintCenterText(client, "Remove : %s", g_strParticle[g_iEntityEffect[client]]);
+					}
+				}
+				
+				if (buttons & IN_ATTACK3)
+				{
+					g_iEntityEffect[client]++;
+					
+					if (g_iEntityEffect[client] >= PARTICLE_LIST)
+					{
+						g_iEntityEffect[client] = 0;
+					}
+				}
+			}
 		}
 	}
 	else if (g_fToolsCD[client] > 0.0)
@@ -505,7 +552,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			
 			EmitSoundToClient(client, SONND_TOOLGUN_SELECT, client, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, 100);
 			
-			(g_iTools[client] < 7)? (g_iTools[client]++) : (g_iTools[client] = 0);
+			(g_iTools[client] < 8)? (g_iTools[client]++) : (g_iTools[client] = 0);
 			
 			//Reset value
 			if (g_iTools[client] == 3)
@@ -520,6 +567,10 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			{
 				g_iEntityRenderFx[client] = 0;
 			}
+			else if (g_iTools[client] == 8)
+			{
+				g_iEntityEffect[client] = 0;
+			}
 		}
 		else if (!(buttons & IN_RELOAD))
 		{
@@ -527,9 +578,13 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		}
 		
 		char display[170];
-		Format(display, sizeof(display), "------------------------\n%s\n------------------------\n\
-										[MOUSE1] %s\n[MOUSE2] %s\n[RELOAD] Switch Tools (%i)"
-										, GetToolDisplay(g_iTools[client], client), GetToolMouse1(g_iTools[client]), GetToolMouse2(g_iTools[client]), g_iTools[client] );
+		Format(display, sizeof(display), "------------------------\n%s\n------------------------\n[MOUSE1] %s\n[MOUSE2] %s\n[RELOAD] Switch Tools (%i)"
+		, GetToolDisplay(g_iTools[client], client), GetToolMouse1(g_iTools[client]), GetToolMouse2(g_iTools[client]), g_iTools[client]);
+		
+		if (g_iTools[client] == 8)
+		{
+			PrintCenterText(client, "Current Effect : %s", g_strParticle[g_iEntityEffect[client]]);
+		}
 		
 		SetHudTextParams(0.75, 0.45, 0.05, 255, 255, 255, 150, 0, 0.0, 0.0, 0.0);
 		
@@ -537,7 +592,6 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		{
 			ShowHudText(client, -1, display);
 		}
-		
 	}
 	
 	return Plugin_Continue;
@@ -564,6 +618,33 @@ bool IsToolGun(int entity)
 	return GetEntProp(entity, Prop_Send, "m_iItemDefinitionIndex") == g_iToolGunWeaponIndex
 		&& GetEntProp(entity, Prop_Send, "m_iEntityQuality") == g_iToolGunQuality
 		&& GetEntProp(entity, Prop_Send, "m_iEntityLevel") == g_iToolGunLevel;
+}
+
+void TE_SendLaser(int client)
+{
+	EmitSoundToClient(client, SOUND_TOOLGUN_SHOOT, client, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, 100);
+		
+	TE_SetupBeamRingPoint(GetClientAimPosition(client), 5.0, 20.0, g_iModelIndex, g_iHaloIndex, 0, 10, 0.5, 3.0, 10.0, {255, 255, 255, 255}, 10, 0);
+	TE_SendToAll();
+	
+	int clientvm = EntRefToEntIndex(g_iClientVMRef[client]);
+	int iAimPoint = EntRefToEntIndex(g_iAimPointRef[client]);
+	if (clientvm != INVALID_ENT_REFERENCE && iAimPoint != INVALID_ENT_REFERENCE)
+	{
+		TeleportEntity(iAimPoint, GetClientAimPosition(client), NULL_VECTOR, NULL_VECTOR);
+		
+		TE_SetupBeamEnts(iAimPoint, EntRefToEntIndex(g_iClientVMRef[client]), g_iModelIndex, g_iHaloIndex, 0, 15, 0.1, 1.0, 1.0, 1, 0.0, {255, 255, 255, 255}, 10, 20);
+		TE_SendToClient(client);
+		
+		for (int i = 1; i <= MaxClients; i++)
+		{
+			if (client != i && IsClientInGame(i))
+			{
+				TE_SetupBeamEnts(client, iAimPoint, g_iModelIndex, g_iHaloIndex, 0, 15, 0.1, 1.0, 1.0, 1, 0.0, {255, 255, 255, 255}, 10, 20);
+				TE_SendToClient(i);
+			}
+		}
+	}
 }
 
 //Credits: FlaminSarge
@@ -738,9 +819,7 @@ int GetClientAimEntity(int client)
 
 public bool TraceEntityFilter(int entity, int mask, int client)
 {
-	return (IsValidEntity(entity)
-			&& entity != client
-			&& MaxClients < entity);
+	return (IsValidEntity(entity) && entity != client && MaxClients < entity);
 }
 
 int Duplicator(int iEntity)
@@ -787,6 +866,7 @@ int Duplicator(int iEntity)
 
 		return iNewEntity;
 	}
+	
 	return -1;
 }
 
@@ -804,7 +884,9 @@ char[] GetToolDisplay(int tool, int client)
 		case (5):toolname = "      Set Color     ";
 		case (6):toolname = "      Set Skin      ";
 		case (7):toolname = "    Set Render Fx   ";
+		case (8):toolname = "     Set Effect     ";
 	}
+	
 	Format(toolname, sizeof(toolname), "%s%s%s", SPACE, toolname, SPACE);
 
 	char display[26] = "";
@@ -839,13 +921,15 @@ char[] GetToolMouse1(int tool)
 		case (5):mouse1 = "Next Color";
 		case (6):mouse1 = "Next Skin";
 		case (7):mouse1 = "Next Render Fx";
+		case (8):mouse1 = "Apply Effect";
 	}
+	
 	return mouse1;
 }
 
 char[] GetToolMouse2(int tool)
 {
-	char mouse2[30];
+	char mouse2[60];
 	switch (tool)
 	{
 		case (0):mouse2 = "Remove";
@@ -856,6 +940,68 @@ char[] GetToolMouse2(int tool)
 		case (5):mouse2 = "Restore";
 		case (6):mouse2 = "Previous Skin";
 		case (7):mouse2 = "Previous Render Fx";
+		case (8):mouse2 = "Remove Effect\n[MOUSE3] Change Effect";
 	}
+	
 	return mouse2;
+}
+
+void TE_ParticleToAll(char[] Name, float origin[3] = NULL_VECTOR, float start[3] = NULL_VECTOR, float angles[3] = NULL_VECTOR, int entindex = -1, int attachtype = -1,int attachpoint = -1, bool resetParticles = true)
+{
+    // find string table
+    int tblidx = FindStringTable("ParticleEffectNames");
+    if (tblidx == INVALID_STRING_TABLE) 
+    {
+        LogError("Could not find string table: ParticleEffectNames");
+        return;
+    }
+    
+    // find particle index
+    char tmp[256];
+    int count = GetStringTableNumStrings(tblidx);
+    int stridx = INVALID_STRING_INDEX;
+    
+    for (int i = 0; i < count; i++)
+    {
+        ReadStringTable(tblidx, i, tmp, sizeof(tmp));
+        if (StrEqual(tmp, Name, false))
+        {
+            stridx = i;
+            break;
+        }
+    }
+    
+    if (stridx==INVALID_STRING_INDEX)
+    {
+        LogError("Could not find particle: %s", Name);
+        return;
+    }
+    
+    TE_Start("TFParticleEffect");
+    TE_WriteFloat("m_vecOrigin[0]", origin[0]);
+    TE_WriteFloat("m_vecOrigin[1]", origin[1]);
+    TE_WriteFloat("m_vecOrigin[2]", origin[2]);
+    TE_WriteFloat("m_vecStart[0]", start[0]);
+    TE_WriteFloat("m_vecStart[1]", start[1]);
+    TE_WriteFloat("m_vecStart[2]", start[2]);
+    TE_WriteVector("m_vecAngles", angles);
+    TE_WriteNum("m_iParticleSystemIndex", stridx);
+    
+    if (entindex != -1)
+    {
+        TE_WriteNum("entindex", entindex);
+    }
+    
+    if (attachtype != -1)
+    {
+        TE_WriteNum("m_iAttachType", attachtype);
+    }
+    
+    if (attachpoint != -1)
+    {
+        TE_WriteNum("m_iAttachmentPointIndex", attachpoint);
+    }
+    
+    TE_WriteNum("m_bResetParticles", resetParticles ? 1 : 0);    
+    TE_SendToAll();
 }
