@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.5"
+#define PLUGIN_VERSION "1.6"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -432,7 +432,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 						{
 							iSkin += 1;
 						}
-						else if (buttons & IN_ATTACK2 && iSkin > 1)
+						else if (buttons & IN_ATTACK2 && iSkin > 0)
 						{
 							iSkin -= 1;
 						}
@@ -798,7 +798,7 @@ int GetClientAimEntity(int client)
 	if(TR_DidHit(trace))
 	{
 		int entity = TR_GetEntityIndex(trace);
-		if (entity > 0 && Build_ReturnEntityOwner(entity) == client)
+		if (entity > 0 && (Build_ReturnEntityOwner(entity) == client || CheckCommandAccess(client, "sm_admin", ADMFLAG_GENERIC)))
 		{
 			char szClass[32];
 			GetEntityClassname(entity, szClass, sizeof(szClass));
