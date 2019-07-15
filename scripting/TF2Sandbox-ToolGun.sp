@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.6"
+#define PLUGIN_VERSION "1.7"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -114,7 +114,7 @@ public void OnClientPutInServer(int client)
 	SDKHook(client, SDKHook_WeaponSwitchPost, WeaponSwitchHookPost);
 	
 	g_iClientVMRef[client] = INVALID_ENT_REFERENCE;
-	g_iAimPointRef[client] = EntIndexToEntRef(CreateAimPoint());
+	g_iAimPointRef[client] = INVALID_ENT_REFERENCE;
 	g_iCopyEntityRef[client] = INVALID_ENT_REFERENCE;
 }
 
@@ -220,6 +220,7 @@ public Action WeaponSwitchHookPost(int client, int entity)
 	return Plugin_Continue;
 }
 
+#define MAX_TOOLS 10
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
 	int iViewModel = GetEntPropEnt(client, Prop_Send, "m_hViewModel");
@@ -536,6 +537,52 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 					}
 				}
 			}
+			//Set Sequences
+			case (9):
+			{
+				if (IsValidEntity(entity))
+				{
+					if ((buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
+					{
+						int iSequence = GetEntProp(entity, Prop_Send, "m_nSequence");
+						if (buttons & IN_ATTACK)
+						{
+							iSequence += 1;
+						}
+						else if (buttons & IN_ATTACK2 && iSequence > 0)
+						{
+							iSequence -= 1;
+						}
+						
+						SetEntProp(entity, Prop_Send, "m_nSequence", iSequence);
+						
+						PrintCenterText(client, "Sequence: %i", iSequence);
+					}
+				}
+			}
+			//Set Animation
+			case (10):
+			{
+				if (IsValidEntity(entity))
+				{
+					if (buttons & IN_ATTACK)
+					{
+						if (SetAnimation(entity))
+						{
+							PrintCenterText(client, "Set Animation successfully");
+						}
+						else
+						{
+							PrintCenterText(client, "No Animation found!");
+						}
+					}
+					else if (buttons & IN_ATTACK2)
+					{
+						SetVariantString("0.0");
+						AcceptEntityInput(entity, "SetPlaybackRate");
+					}
+				}
+			}
 		}
 	}
 	else if (g_fToolsCD[client] > 0.0)
@@ -552,7 +599,14 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 			
 			EmitSoundToClient(client, SONND_TOOLGUN_SELECT, client, SNDCHAN_AUTO, SNDLEVEL_NORMAL, SND_NOFLAGS, 1.0, 100);
 			
-			(g_iTools[client] < 8)? (g_iTools[client]++) : (g_iTools[client] = 0);
+			if (buttons & IN_DUCK)
+			{
+				(g_iTools[client] > 0)? (g_iTools[client]--) : (g_iTools[client] = MAX_TOOLS);
+			}
+			else
+			{
+				(g_iTools[client] < MAX_TOOLS)? (g_iTools[client]++) : (g_iTools[client] = 0);
+			}
 			
 			//Reset value
 			if (g_iTools[client] == 3)
@@ -578,7 +632,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 		}
 		
 		char display[170];
-		Format(display, sizeof(display), "------------------------\n%s\n------------------------\n[MOUSE1] %s\n[MOUSE2] %s\n[RELOAD] Switch Tools (%i)"
+		Format(display, sizeof(display), "------------------------\n%s\n------------------------\n[MOUSE1] %s\n[MOUSE2] %s\n[RELOAD] Next Tool (%i)"
 		, GetToolDisplay(g_iTools[client], client), GetToolMouse1(g_iTools[client]), GetToolMouse2(g_iTools[client]), g_iTools[client]);
 		
 		if (g_iTools[client] == 8)
@@ -629,8 +683,14 @@ void TE_SendLaser(int client)
 	
 	int clientvm = EntRefToEntIndex(g_iClientVMRef[client]);
 	int iAimPoint = EntRefToEntIndex(g_iAimPointRef[client]);
-	if (clientvm != INVALID_ENT_REFERENCE && iAimPoint != INVALID_ENT_REFERENCE)
+	if (clientvm != INVALID_ENT_REFERENCE)
 	{
+		if (iAimPoint == INVALID_ENT_REFERENCE)
+		{
+			iAimPoint = CreateAimPoint();
+			g_iAimPointRef[client] = EntIndexToEntRef(iAimPoint);
+		}
+		
 		TeleportEntity(iAimPoint, GetClientAimPosition(client), NULL_VECTOR, NULL_VECTOR);
 		
 		TE_SetupBeamEnts(iAimPoint, EntRefToEntIndex(g_iClientVMRef[client]), g_iModelIndex, g_iHaloIndex, 0, 15, 0.1, 1.0, 1.0, 1, 0.0, {255, 255, 255, 255}, 10, 20);
@@ -694,36 +754,15 @@ int TF2_EquipWearable(int client, int entity)
 
 int CreateAimPoint()
 {
-	int iAimPoint =  CreateEntityByName("prop_dynamic_override");
-	DispatchKeyValue(iAimPoint, "model", MODEL_TOOLGUNWM);
+	int iAimPoint = CreateEntityByName("prop_dynamic_override");
+	
+	SetEntityModel(iAimPoint, MODEL_TOOLGUNWM);
 	
 	SetEntPropFloat(iAimPoint, Prop_Send, "m_flModelScale", 0.0);
 	
 	DispatchSpawn(iAimPoint);
+	
 	return iAimPoint;
-}
-
-//Normally 2 is okay but 4 is more secure
-#define FRAME_DELAY 5
-
-//Credits: Pelipoika
-public void KillAimPointPost(int entity)
-{
-    static int iFrame = 0;
-
-    if(++iFrame < FRAME_DELAY)
-    {
-        RequestFrame(KillAimPointPost, entity);
-        return;
-    }
-
-    int iAimPoint = EntRefToEntIndex(entity);
-    if(iAimPoint != INVALID_ENT_REFERENCE)
-    {
-        AcceptEntityInput(iAimPoint, "Kill");
-    }
-    
-    iFrame = 0;
 }
 
 //Credits: Alienmario
@@ -753,6 +792,7 @@ float[] GetClientEyePositionEx(int client)
 {
 	float pos[3]; 
 	GetClientEyePosition(client, pos);
+	
 	return pos;
 }
 
@@ -760,6 +800,7 @@ float[] GetClientEyeAnglesEx(int client)
 {
 	float angles[3]; 
 	GetClientEyeAngles(client, angles);
+	
 	return angles;
 }
 
@@ -774,6 +815,7 @@ float[] GetClientAimPosition(int client)
 	}
 	
 	CloseHandle(trace);
+	
 	return endpos;
 }
 
@@ -825,22 +867,27 @@ public bool TraceEntityFilter(int entity, int mask, int client)
 int Duplicator(int iEntity)
 {
 	//Get Value
-	float fOrigin[3], fAngles[3], fSize;
+	float fOrigin[3], fAngles[3];
 	char szModel[64], szName[128], szClass[32];
-	int iCollision, iRed, iGreen, iBlue, iAlpha, iSkin;
-	RenderFx EntityRenderFx;
-
+	int iRed, iGreen, iBlue, iAlpha;
+	
 	GetEntityClassname(iEntity, szClass, sizeof(szClass));
+	
+	if (StrEqual(szClass, "prop_dynamic"))
+	{
+		szClass = "prop_dynamic_override";
+	}
+	else if (StrEqual(szClass, "prop_physics"))
+	{
+		szClass = "prop_physics_override";
+	}
+	
 	GetEntPropString(iEntity, Prop_Data, "m_ModelName", szModel, sizeof(szModel));
 	GetEntPropVector(iEntity, Prop_Send, "m_vecOrigin", fOrigin);
 	GetEntPropVector(iEntity, Prop_Data, "m_angRotation", fAngles);
-	iCollision = GetEntProp(iEntity, Prop_Data, "m_CollisionGroup", 4);
-	fSize = GetEntPropFloat(iEntity, Prop_Send, "m_flModelScale");
 	GetEntityRenderColor(iEntity, iRed, iGreen, iBlue, iAlpha);
-	EntityRenderFx = GetEntityRenderFx(iEntity);
-	iSkin = GetEntProp(iEntity, Prop_Send, "m_nSkin");
 	GetEntPropString(iEntity, Prop_Data, "m_iName", szName, sizeof(szName));
-
+	
 	int iNewEntity = CreateEntityByName(szClass);
 	if (iNewEntity > MaxClients && IsValidEntity(iNewEntity))
 	{
@@ -852,22 +899,81 @@ int Duplicator(int iEntity)
 			PrecacheModel(szModel);
 		}
 
-		DispatchKeyValue(iNewEntity, "model", szModel);
+		SetEntityModel(iNewEntity, szModel);
 		TeleportEntity(iNewEntity, fOrigin, fAngles, NULL_VECTOR);
 		DispatchSpawn(iNewEntity);
-		SetEntData(iNewEntity, FindSendPropInfo("CBaseEntity", "m_CollisionGroup"), iCollision, 4, true);
-		SetEntPropFloat(iNewEntity, Prop_Send, "m_flModelScale", fSize);
-		if(iAlpha < 255)	SetEntityRenderMode(iNewEntity, RENDER_TRANSCOLOR);
-		else				SetEntityRenderMode(iNewEntity, RENDER_NORMAL);
+		SetEntData(iNewEntity, FindSendPropInfo("CBaseEntity", "m_CollisionGroup"), GetEntProp(iEntity, Prop_Data, "m_CollisionGroup", 4), 4, true);
+		SetEntPropFloat(iNewEntity, Prop_Send, "m_flModelScale", GetEntPropFloat(iEntity, Prop_Send, "m_flModelScale"));
+		(iAlpha < 255) ? SetEntityRenderMode(iNewEntity, RENDER_TRANSCOLOR) : SetEntityRenderMode(iNewEntity, RENDER_NORMAL);
 		SetEntityRenderColor(iNewEntity, iRed, iGreen, iBlue, iAlpha);
-		SetEntityRenderFx(iNewEntity, EntityRenderFx);
-		SetEntProp(iNewEntity, Prop_Send, "m_nSkin", iSkin);
+		SetEntityRenderFx(iNewEntity, GetEntityRenderFx(iEntity));
+		SetEntProp(iNewEntity, Prop_Send, "m_nSkin", GetEntProp(iEntity, Prop_Send, "m_nSkin"));
 		SetEntPropString(iNewEntity, Prop_Data, "m_iName", szName);
-
+		
 		return iNewEntity;
 	}
 	
 	return -1;
+}
+
+bool SetAnimation(int entity)
+{
+	char szModel[64];
+	GetEntPropString(entity, Prop_Data, "m_ModelName", szModel, sizeof(szModel));
+	
+	if (StrContains(szModel, "pickup_powerup_") != -1
+	|| StrEqual(szModel, "models/items/tf_gift.mdl")
+	|| StrEqual(szModel, "models/props_halloween/halloween_gift.mdl")
+	|| StrEqual(szModel, "models/flag/briefcase.mdl")
+	|| StrEqual(szModel, "models/flag/ticket_case.mdl")
+	|| StrEqual(szModel, "models/props_doomsday/australium_container.mdl")
+	|| StrEqual(szModel, "models/buggy.mdl"))
+	{
+		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
+		
+		SetVariantString("spin");
+		AcceptEntityInput(entity, "SetAnimation");
+		AcceptEntityInput(entity, "Enable");
+		
+		return true;
+	}
+	else if (StrContains(szModel, "ammopack_") != -1
+	|| StrContains(szModel, "medkit_") != -1
+	|| StrContains(szModel, "currencypack_") != -1
+	|| StrEqual(szModel, "models/items/plate_robo_sandwich.mdl")
+	|| StrEqual(szModel, "models/items/plate_sandwich_xmas.mdl")
+	|| StrEqual(szModel, "models/items/plate.mdl"))
+	{
+		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
+		
+		SetVariantString("idle");
+		AcceptEntityInput(entity, "SetAnimation");
+		AcceptEntityInput(entity, "Enable");
+		
+		return true;
+	}
+	else if (StrContains(szModel, "models/bots/boss_bot/tank_track") != -1)
+	{
+		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
+		
+		SetVariantString("forward");
+		AcceptEntityInput(entity, "SetAnimation");
+		AcceptEntityInput(entity, "Enable");
+		
+		return true;
+	}
+	else if (StrEqual(szModel, "models/bots/boss_bot/boss_tank.mdl"))
+	{
+		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
+		
+		SetVariantString("movement");
+		AcceptEntityInput(entity, "SetAnimation");
+		AcceptEntityInput(entity, "Enable");
+		
+		return true;
+	}
+	
+	return false;
 }
 
 #define SPACE "                    "
@@ -885,6 +991,8 @@ char[] GetToolDisplay(int tool, int client)
 		case (6):toolname = "      Set Skin      ";
 		case (7):toolname = "    Set Render Fx   ";
 		case (8):toolname = "     Set Effect     ";
+		case (9):toolname = "    Set Sequence    ";
+		case (10):toolname = "    Set Animation   ";
 	}
 	
 	Format(toolname, sizeof(toolname), "%s%s%s", SPACE, toolname, SPACE);
@@ -913,15 +1021,17 @@ char[] GetToolMouse1(int tool)
 	char mouse1[30];
 	switch (tool)
 	{
-		case (0):mouse1 = "Remove";
-		case (1):mouse1 = "Larger";
-		case (2):mouse1 = "Collide";
-		case (3):mouse1 = "Copy";
-		case (4):mouse1 = "More Transparent";
-		case (5):mouse1 = "Next Color";
-		case (6):mouse1 = "Next Skin";
-		case (7):mouse1 = "Next Render Fx";
-		case (8):mouse1 = "Apply Effect";
+		case (0): mouse1 = "Remove";
+		case (1): mouse1 = "Larger";
+		case (2): mouse1 = "Collide";
+		case (3): mouse1 = "Copy";
+		case (4): mouse1 = "More Transparent";
+		case (5): mouse1 = "Next Color";
+		case (6): mouse1 = "Next Skin";
+		case (7): mouse1 = "Next Render Fx";
+		case (8): mouse1 = "Apply Effect";
+		case (9): mouse1 = "Next Sequence";
+		case (10): mouse1 = "Enable Animation";
 	}
 	
 	return mouse1;
@@ -932,15 +1042,17 @@ char[] GetToolMouse2(int tool)
 	char mouse2[60];
 	switch (tool)
 	{
-		case (0):mouse2 = "Remove";
-		case (1):mouse2 = "Smaller";
-		case (2):mouse2 = "No Collide";
-		case (3):mouse2 = "Paste";
-		case (4):mouse2 = "More Visible";
-		case (5):mouse2 = "Restore";
-		case (6):mouse2 = "Previous Skin";
-		case (7):mouse2 = "Previous Render Fx";
-		case (8):mouse2 = "Remove Effect\n[MOUSE3] Change Effect";
+		case (0): mouse2 = "Remove";
+		case (1): mouse2 = "Smaller";
+		case (2): mouse2 = "No Collide";
+		case (3): mouse2 = "Paste";
+		case (4): mouse2 = "More Visible";
+		case (5): mouse2 = "Restore";
+		case (6): mouse2 = "Previous Skin";
+		case (7): mouse2 = "Previous Render Fx";
+		case (8): mouse2 = "Remove Effect\n[MOUSE3] Change Effect";
+		case (9): mouse2 = "Previous Sequence";
+		case (10): mouse2 = "Disable Animation";
 	}
 	
 	return mouse2;
@@ -971,7 +1083,7 @@ void TE_ParticleToAll(char[] Name, float origin[3] = NULL_VECTOR, float start[3]
         }
     }
     
-    if (stridx==INVALID_STRING_INDEX)
+    if (stridx == INVALID_STRING_INDEX)
     {
         LogError("Could not find particle: %s", Name);
         return;
