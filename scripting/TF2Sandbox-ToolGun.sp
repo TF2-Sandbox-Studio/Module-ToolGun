@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.7"
+#define PLUGIN_VERSION "1.8"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -85,6 +85,8 @@ public void OnPluginStart()
 {
 	RegAdminCmd("sm_tg", Command_EquipToolGun, 0, "Equip a Tool Gun");
 	//RegAdminCmd("sm_toolgun", Command_EquipToolGun, 0, "Equip a Tool Gun");
+	
+	RegAdminCmd("sm_seq", Command_SetSequence, 0, "Usage: !seq <sequence>");
 	
 	HookEvent("player_spawn", Event_PlayerSpawn);
 }
@@ -181,6 +183,36 @@ public Action Command_EquipToolGun(int client, int args)
 	return Plugin_Continue;
 }
 
+public Action Command_SetSequence(int client, int args)
+{
+	if(client <= 0 || client > MaxClients || !IsClientInGame(client) || !IsPlayerAlive(client))
+	{
+		return Plugin_Continue;
+	}
+	
+	if (args != 1)
+	{
+		Build_PrintToChat(client, "Usage: !seq <sequence>");
+		return Plugin_Continue;
+	}
+	
+	char strSeq[5];
+	GetCmdArg(1, strSeq, sizeof(strSeq));
+	
+	int seq = StringToInt(strSeq);
+	
+	int entity = GetClientAimEntity(client);
+	if (!IsValidEntity(entity))
+	{
+		Build_PrintToChat(client, "Please aim on your prop!");
+	}
+	
+	SetEntProp(entity, Prop_Send, "m_nSequence", seq);
+	Build_PrintToChat(client, "Set Entity %i to Sequence %i", entity, seq);
+	
+	return Plugin_Continue;
+}
+
 public void Event_PlayerSpawn(Event event, const char[] name, bool dontBroadcast)
 {
 	int client = GetClientOfUserId(event.GetInt("userid"));
@@ -220,7 +252,7 @@ public Action WeaponSwitchHookPost(int client, int entity)
 	return Plugin_Continue;
 }
 
-#define MAX_TOOLS 10
+#define MAX_TOOLS 9
 public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3], float angles[3], int &weapon, int &subtype, int &cmdnum, int &tickcount, int &seed, int mouse[2])
 {
 	int iViewModel = GetEntPropEnt(client, Prop_Send, "m_hViewModel");
@@ -555,6 +587,8 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 						}
 						
 						SetEntProp(entity, Prop_Send, "m_nSequence", iSequence);
+						SetEntPropFloat(entity, Prop_Send, "m_flPlaybackRate", 1.0);
+						SetEntPropFloat(entity, Prop_Send, "m_flCycle", 0.0);
 						
 						PrintCenterText(client, "Sequence: %i", iSequence);
 					}
@@ -566,21 +600,37 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 				if (IsValidEntity(entity))
 				{
 					if (buttons & IN_ATTACK)
-					{
-						if (SetAnimation(entity))
-						{
-							PrintCenterText(client, "Set Animation successfully");
-						}
-						else
-						{
-							PrintCenterText(client, "No Animation found!");
-						}
+					{	
+						SetEntPropFloat(entity, Prop_Send, "m_flPlaybackRate", 1.0);
 					}
 					else if (buttons & IN_ATTACK2)
 					{
-						SetVariantString("0.0");
-						AcceptEntityInput(entity, "SetPlaybackRate");
+						SetEntPropFloat(entity, Prop_Send, "m_flPlaybackRate", 0.0);
 					}
+				}
+			}
+			//Set Pose
+			case (11):
+			{
+				if (IsValidEntity(entity))
+				{
+					float pose = GetEntPropFloat(entity, Prop_Send, "m_flCycle");
+					
+					if (buttons & IN_ATTACK)
+					{
+						pose += 10.0;
+						
+						SetEntProp(entity, Prop_Send, "m_bClientSideAnimation", 1);
+						SetEntPropFloat(entity, Prop_Send, "m_flCycle", pose);
+					}
+					else if (buttons & IN_ATTACK2)
+					{
+						pose -= 10.0;
+						
+						SetEntPropFloat(entity, Prop_Send, "m_flCycle", pose);
+					}
+					
+					PrintCenterText(client, "Pose: %.1f", pose);
 				}
 			}
 		}
@@ -916,7 +966,7 @@ int Duplicator(int iEntity)
 	return -1;
 }
 
-bool SetAnimation(int entity)
+stock bool SetAnimation(int entity)
 {
 	char szModel[64];
 	GetEntPropString(entity, Prop_Data, "m_ModelName", szModel, sizeof(szModel));
@@ -942,7 +992,8 @@ bool SetAnimation(int entity)
 	|| StrContains(szModel, "currencypack_") != -1
 	|| StrEqual(szModel, "models/items/plate_robo_sandwich.mdl")
 	|| StrEqual(szModel, "models/items/plate_sandwich_xmas.mdl")
-	|| StrEqual(szModel, "models/items/plate.mdl"))
+	|| StrEqual(szModel, "models/items/plate.mdl")
+	|| StrEqual(szModel, "models/effects/sentry1_muzzle/sentry1_muzzle.mdl"))
 	{
 		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
 		
@@ -967,6 +1018,17 @@ bool SetAnimation(int entity)
 		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
 		
 		SetVariantString("movement");
+		AcceptEntityInput(entity, "SetAnimation");
+		AcceptEntityInput(entity, "Enable");
+		
+		return true;
+	}
+	else if (StrEqual(szModel, "models/effects/splode.mdl")
+	|| StrEqual(szModel, "models/effects/splodeglass.mdl"))
+	{
+		SetEntProp(entity, Prop_Send, "m_nSequence", 0);
+		
+		SetVariantString("anim");
 		AcceptEntityInput(entity, "SetAnimation");
 		AcceptEntityInput(entity, "Enable");
 		
