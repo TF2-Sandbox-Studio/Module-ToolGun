@@ -3,7 +3,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "BattlefieldDuck"
-#define PLUGIN_VERSION "1.8"
+#define PLUGIN_VERSION "1.9"
 
 #include <sourcemod>
 #include <sdkhooks>
@@ -208,6 +208,9 @@ public Action Command_SetSequence(int client, int args)
 	}
 	
 	SetEntProp(entity, Prop_Send, "m_nSequence", seq);
+	SetEntPropFloat(entity, Prop_Send, "m_flPlaybackRate", 1.0);
+	SetEntPropFloat(entity, Prop_Send, "m_flCycle", 0.0);
+						
 	Build_PrintToChat(client, "Set Entity %i to Sequence %i", entity, seq);
 	
 	return Plugin_Continue;
