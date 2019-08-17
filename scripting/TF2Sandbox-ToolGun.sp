@@ -356,7 +356,7 @@ public Action OnPlayerRunCmd(int client, int &buttons, int &impulse, float vel[3
 					if (iCopyEntity != INVALID_ENT_REFERENCE)
 					{
 						int iPasteEntity = Duplicator(iCopyEntity);
-						if (IsValidEntity(iPasteEntity) && Build_RegisterEntityOwner(iPasteEntity, client))
+						if (IsValidEntity(iPasteEntity))
 						{
 							if (Build_RegisterEntityOwner(iPasteEntity, client))
 							{
